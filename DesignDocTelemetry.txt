@@ -1,0 +1,14 @@
+Overall Design Goal:
+  Design telemetry sending and receiving suite to get the most data possible
+  
+For Nikomedes Launch:
+  Ground code to receive incoming data and log it to screen and file with timestamps
+  In-Rocket Code to receive data from various sensors and pass this data to the antenna to be sent
+  Launch is at start of November. Should be completely finished and tested before Halloween
+  
+For full launch:
+  Ground code with full-featured GUI, ideally parses incoming data and does data analysis. Would ideally have GPS map tracking, graphs of
+    altitude, pressure, orientation. Also telemetry info showing packet loss rate, data link rate. Everything recorded, either to
+    monolithic log file or separated and organized on some db or other relational structure
+    May include being activated by a series of button presses and switches from GPIO
+  May or may not have scrath-coded telemetry on the rocket itself. Will probably be data sent from altimeters.

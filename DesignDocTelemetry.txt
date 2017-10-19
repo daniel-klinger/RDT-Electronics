@@ -12,3 +12,23 @@ For full launch:
     monolithic log file or separated and organized on some db or other relational structure
     May include being activated by a series of button presses and switches from GPIO
   May or may not have scrath-coded telemetry on the rocket itself. Will probably be data sent from altimeters.
+
+  
+Ground Code:
+  1. Constantly reads serial data from antenna as it comes in
+  2. Parses data received. 
+  3. Writes both raw and parsed data to file
+  4. Writes parsed data to stdout when it is different from previous data (you should be sending constantly to maximize chance of packets getting through)
+  5. Bonus: Tell when connection is lost (have timeout on serial, display when timeout is passed as no connection)
+  6. Bonus: Determine and display packet loss (if you are sending at a moderately constant rate, just do "actual packets per second / expected packets per second" or something
+  
+  Structure:
+    Initialization of things
+    Main Loop (exit on KeyboardInterrupt Error)
+      Wait for serial messages (have a delimeter to determine the end of a "message")
+      Write raw message to file (use logger, probably debug, and then screen has a minimum of info)
+      Parse message
+      Write parsed message to file
+      If parsed message is different than last parsed message, display to screen
+
+      

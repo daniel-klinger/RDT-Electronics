@@ -25,6 +25,21 @@ logger.addHandler(fileHandler)
 
 def addToQueue(message):
   dataQueue.put([threading.current_thread(), message])
+import RPi.GPIO as GPIO
+import threading
+from queue import Queue
+from BerryImu import *
+from collections import OrderedDict
+
+# boolean to stop everything when done
+stop = false;
+# dictionary for messages to be stored
+messages = OrderedDict()
+# queue for data to be passed to the antenna with
+dataQueue = queue.Queue()
+
+#Initiliazation of I2C bus
+bus = smbus.SMBus(1)
 
 # this functions pulls data (message) off of the queue and sends it
 # as a broadcast for the other antenna to receive
@@ -53,70 +68,59 @@ def readWordTwosComp(adr):
     else:
         return val
 
-def AccelGyroPres():
-    oldXAccel=0
-    oldYAccel=0
-    oldzAccel=0
-    oldGyroX=0
-    oldGyroY=0
-    oldGyroZ=0
-    rocketHasLaunched=False
-    timeRocketLaunched=0
+
+def getBerryImuData():
+  oldXAccel = 0
+  oldYAccel = 0
+  oldzAccel = 0
+  oldXMag = 0
+  oldYMag = 0
+  oldZMag = 0
+  oldGyroX = 0
+  oldGyroY = 0
+  oldGyroZ = 0
+  rocketHasLaunched = False
+  timeRocketLaunched = 0
+  berryImu = BerryImu()
+
+  while True:
+    accelX = berryImu.readACCx()
+    accelY = berryImu.readACCy()
+    accelZ = berryImu.readACCz()
+
+    magX = berryImu.readMAGx()
+    magY = berryImu.readMAGy()
+    magZ = berryImu.readMAGz()
     
-    while True:
-        accelOutX = readWordTwosComp(accel_xout_h)
-        accelOutY = readWordTwosComp(accel_yout_h)
-        accelOutZ = readWordTwosComp(accel_zout_h)
+    gyrX = berryImu.readGYRx()      
+    gyrY = berryImu.readGYRy()        
+    gyrZ = berryImu.readGYRz()
 
-        accelOutScaledX = accelOutX / 2048.0
-        accelOutScaledY = accelOutY / 2048.0
-        accelOutScaledZ = accelOutZ / 2048.0
+    tempAndPress = berryImu.getTempAndPressure()
 
-        if ((accelOutScaledX > 1.5 or accelOutScaledY > 1.5 or accelOutScaledZ > 1.5)
-            and (accelOutScaledX != oldXAccel or accelOutScaledY != oldYAccel or accelOutScaledZ != oldzAccel):
-            mag = magnitude(accelOutScaledX,accelOutScaledY,accelOutScaledZ)
-            if (mag > 5 and not rocketHasLaunched):
-                rocketHasLaunched = true
-                timeRocketLaunched = time.time()
-                time.clock()
-            if(mag <= 5 nd rocketHasLaunched):
-                # figure out how data will be sent
-            
-            gyroOutX = readWordTwosComp(gyro_xout_h)
-            gyroOutY = readWordTwosComp(gyro_yout_h)
-            gyroOutZ = readWordTwosComp(gyro_zout_h)
 
-            gyroOutScaledX = gyroOutX / 16.4
-            gyroOutScaledY = gyroOutY / 16.4
-            gyroOutScaledZ = gyroOutZ / 16.4
-
-            if ((gyroOutScaledX-oldGyroX > 16 or gyroOutScaledY - oldGyroY > 16 or gyroOutScaledZ - oldGyroZ > 16)):
-                # figure out how data will be sent
-                oldGyroX = gyroOutScaledX
-                oldGyroY = gyroOutScaledY
-                oldGyroZ = gyroOutScaledZ
 
 
                 
 def setup():
-    # Setting power register to start getting sesnor data
-    bus.write_byte_data(address, power_mgmt_1, 0)
+  # Setting power register to start getting sesnor data
+  bus.write_byte_data(address, power_mgmt_1, 0)
 
-    # Setting Acceleration register to set the sensitivity
-    # 0,8,16 and 24 for 16384,8192,4096 and 2048 sensitivity respectively
-    bus.write_byte_data(address, accel_config, 24)
+  # Setting Acceleration register to set the sensitivity
+  # 0,8,16 and 24 for 16384,8192,4096 and 2048 sensitivity respectively
+  bus.write_byte_data(address, accel_config, 24)
 
-    # Setting gyroscope register to set the sensitivity
-    # 0,8,16 and 24 for 131,65.5,32.8 and 16.4 sensitivity respectively
-    bus.write_byte_data(address, gyro_config, 24)
+  # Setting gyroscope register to set the sensitivity
+  # 0,8,16 and 24 for 131,65.5,32.8 and 16.4 sensitivity respectively
+  bus.write_byte_data(address, gyro_config, 24)
 
 
         
 if __name__ == "__main__":
-    setup()
-    try:
-        print("running")
-    except KeyboardInterrupt:
-        pass
+  setup()
+  try:
+    print("running")
+  except KeyboardInterrupt:
+    pass
 
     

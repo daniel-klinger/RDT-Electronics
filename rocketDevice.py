@@ -5,45 +5,41 @@ import math
 import serial
 import BerryImu
 import GPIO
-from queue import queue
+import queue
+import threading
+from collections import OrderedDict
 
-stop = false;
 dataQueue = queue.Queue()
 
-#Initiliazation of I2C bus
-bus = smbus.SMBus(1)
-address = 0x68       # Sensor I2C address
-address_mag = 0x0c   #Sensor address for magnetometer
+messages = OrderedDict()
 
-# Register address from MPU 9255 register map
-power_mgmt_1 = 0x6b
-usr_cntrl = 0x6a
-int_pin_conf = 0x37
-cntrl = 0x0a
-mag_xout_h = 0x03
-mag_yout_h = 0x05
-mag_zout_h = 0x07
-gyro_config = 0x1b
-gyro_xout_h = 0x43
-gyro_yout_h = 0x45
-gyro_zout_h = 0x47
-accel_config = 0x1c
-accel_xout_h = 0x3b
-accel_yout_h = 0x3d
-accel_zout_h = 0x3f
+# create formatters for the logger
+format = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s)')
+# initialize our logger
+logger = logging.getLogger("rocketDevice")
+logger.setLevel(logging.DEBUG)
+# create a file to log data to
+fileHandler = logging.FileHandler("flight.log", mode = "a", delay = True)
+fileHandler.setFormatter(format)
+logger.addHandler(fileHandler)
+
+def addToQueue(message):
+  dataQueue.put([threading.current_thread(), message])
 
 # this functions pulls data (message) off of the queue and sends it
 # as a broadcast for the other antenna to receive
 def antenna(ser):
+    global messages
     while True:
         try:
-            data = dataQueue.get(block = True, timeout = 5)
-            ser.write(bytes(data, "utf-8"))
+            data = dataQueue.get(timeout = 0.05)
+            #data = (threadName, message)
+            messages[data[0]] = data[1]
+            log.debug("Updated: '%s' to '%s'", data[0], data[1])
         except Empty:
             pass
         finally:
-            if stop:
-                break
+          ser.write(bytes("|".join(messages.values()), "utf-8"))
 
 def magnitude(x, y, z):
     return math.sqrt(x*x+y*y+z*z)

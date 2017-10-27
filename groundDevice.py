@@ -11,8 +11,11 @@ import logging
 # initialize our logger
 logger = logging.getLogger("groundServer")
 logger.setLevel(logging.DEBUG)
-format = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
+format = logging.Formatter('%(message)s')
 fileHandler = logging.FileHandler("data.log", mode = "a", delay = True)
+fileHandler.setFormatter(format)
+logger.addHandler(fileHandler)
+fileHandler = logging.FileHandler("raw.log", mode = "a", delay = True)
 fileHandler.setFormatter(format)
 logger.addHandler(fileHandler)
 outHandler = logging.StreamHandler(sys.stdout)

@@ -4,7 +4,7 @@ import SMBus
 import math
 import serial
 import BerryImu
-import GPIO
+import RPi.GPIO
 import queue
 import threading
 from collections import OrderedDict
@@ -25,21 +25,6 @@ logger.addHandler(fileHandler)
 
 def addToQueue(message):
   dataQueue.put([threading.current_thread(), message])
-import RPi.GPIO as GPIO
-import threading
-from queue import Queue
-from BerryImu import *
-from collections import OrderedDict
-
-# boolean to stop everything when done
-stop = false;
-# dictionary for messages to be stored
-messages = OrderedDict()
-# queue for data to be passed to the antenna with
-dataQueue = queue.Queue()
-
-#Initiliazation of I2C bus
-bus = smbus.SMBus(1)
 
 # this functions pulls data (message) off of the queue and sends it
 # as a broadcast for the other antenna to receive
@@ -56,20 +41,7 @@ def antenna(ser):
         finally:
           ser.write(bytes("|".join(messages.values()), "utf-8"))
 
-def magnitude(x, y, z):
-    return math.sqrt(x*x+y*y+z*z)
-
-def readWordTwosComp(adr):
-    high = bus.read_byte_data(address, adr)
-    low = bus.read_byte_data(address, adr + 1)
-    val = (high << 8) + low
-    if (val >= 0x8000):
-        return -((65535 - val) + 1)
-    else:
-        return val
-
-
-def getBerryImuData():
+def berryImuData():
   oldXAccel = 0
   oldYAccel = 0
   oldzAccel = 0
@@ -84,42 +56,41 @@ def getBerryImuData():
   berryImu = BerryImu()
 
   while True:
+    # get readings for accelation
     accelX = berryImu.readACCx()
     accelY = berryImu.readACCy()
     accelZ = berryImu.readACCz()
-
+    # get readings for magnetometer
     magX = berryImu.readMAGx()
     magY = berryImu.readMAGy()
     magZ = berryImu.readMAGz()
-    
+    # get readings from the gyroscope
     gyrX = berryImu.readGYRx()      
     gyrY = berryImu.readGYRy()        
     gyrZ = berryImu.readGYRz()
-
+    # get temperature and pressure readings
     tempAndPress = berryImu.getTempAndPressure()
 
+def gpsData():
+  pass
 
-
-
-                
-def setup():
-  # Setting power register to start getting sesnor data
-  bus.write_byte_data(address, power_mgmt_1, 0)
-
-  # Setting Acceleration register to set the sensitivity
-  # 0,8,16 and 24 for 16384,8192,4096 and 2048 sensitivity respectively
-  bus.write_byte_data(address, accel_config, 24)
-
-  # Setting gyroscope register to set the sensitivity
-  # 0,8,16 and 24 for 131,65.5,32.8 and 16.4 sensitivity respectively
-  bus.write_byte_data(address, gyro_config, 24)
-
-
-        
+def gpioData():
+  pass   
+   
 if __name__ == "__main__":
-  setup()
   try:
-    print("running")
+    # set up the threads for collecting data from each sensor and the antenna
+    antennaThread = threading.Thread(target = antenna, name = "antenna", args = (ser,))
+    berryImuThread = threading.Thread(target = berryImuData, name = "berryImu")
+    gpsThread = threading.Thread(target = gpsData, name = "gps")
+    gpioThread = threading.Thread(target = gpioData, name = "gpio")
+    threads = [antennaThread, berryImuThread, gpsThread, gpioThread]
+    # start all threads
+    for t in threads:
+      t.start()
+    # sit here until all threads are done threading
+    for t in threads:
+      t.join()
   except KeyboardInterrupt:
     pass
 

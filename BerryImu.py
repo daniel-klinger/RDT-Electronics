@@ -176,6 +176,6 @@ class BerryImu():
     x1 = (x1 * 3038) >> 16
     x2 = int(-7357 * p) >> 16
     p = p + ((x1 + x2 + 3791) >> 4)
-    toReturn=toReturn+"Temperature:"+str(t/10.0)+ "C"
-    toReturn=toReturn+"Pressure:"+ str(p / 100.0)+ "hPa"
-    return toReturn
+    # toReturn=toReturn+"Temperature:"+str(t/10.0)+ "C"
+    # toReturn=toReturn+"Pressure:"+ str(p / 100.0)+ "hPa" 
+    return (t/10), (p/100)

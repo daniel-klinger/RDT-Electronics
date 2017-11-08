@@ -9,6 +9,7 @@ import queue
 import threading
 from collections import OrderedDict
 from GPSLib import GPS
+from time import sleep
 
 dataQueue = queue.Queue()
 
@@ -77,7 +78,32 @@ def gpsData():
 
 
 def gpioData():
-  pass   
+  import RPi.GPIO as G
+  GPIO = namedtuple("GPIO", ["name","pin"])
+  #Dict that has the same order every time
+  GPIOs = OrderedDict({[29]: "photo", [28]: "tilt"})
+  
+  #Initialize the pins
+  G.setmode(G.BCM)
+  #G.setup(0, G.UP) #Set pull-up resistor
+  for pin in GPIOs: 
+    G.setup(pin, G.IN)
+  
+  #Set up callbacks
+  for pin in GPIOs:
+    #This will this pin's changes to a list of pins to change
+    G.add_event_detect(pin, G.BOTH)
+    
+  #Loop to wait for inputs to change
+  while True:
+    buffer = ""
+    for pin in GPIOs:
+      if G.event_detected(pin):
+        buffer += "C" #Indicate it changed
+      else:
+        buffer += "N" #Indicate it did not change
+      buffer += int(input(pin)) #Put 0 if low, 1 if high
+    sleep(0.1) #Sleep 100 ms between checking
 
 # creates a string like '{:.2f}, {:.2f}...' to be filled with data
 # if you want non truncated data, set truncated to false
@@ -87,6 +113,7 @@ def createDataString(numElements, truncated = True):
     return ", ".join(["{:.2f}" for i in range(numElements)])
   else:
     return ", ".join(["{}" for i in range(numElements)])
+
 
 if __name__ == "__main__":
   # Ordered dict orders keys by when they were added

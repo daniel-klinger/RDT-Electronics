@@ -79,7 +79,9 @@ def gpsData():
 
 def gpioData():
   import RPi.GPIO as G
-  GPIO = namedtuple("GPIO", ["name","pin"])
+  #Time between checking of pins
+  #Ensure not shorter than antenna timeout, or will lose some data
+  GPIO_WAIT_TIME = 0.1 #100ms
   #Dict that has the same order every time
   GPIOs = OrderedDict({[29]: "photo", [28]: "tilt"})
   
@@ -88,6 +90,11 @@ def gpioData():
   #G.setup(0, G.UP) #Set pull-up resistor
   for pin in GPIOs: 
     G.setup(pin, G.IN)
+  
+  states = {pin: G.input(pin) for pin in GPIOs} #Get initial states of the pins
+  #Dict of counters. Counter is set to 0 when a new state is detected.
+  #Incremented by 1 each loop.
+  counters = {pin: 0 for pin in GPIOs} 
   
   #Set up callbacks
   for pin in GPIOs:
@@ -98,12 +105,15 @@ def gpioData():
   while True:
     buffer = ""
     for pin in GPIOs:
+      counters[pin] += 1
       if G.event_detected(pin):
-        buffer += "C" #Indicate it changed
-      else:
-        buffer += "N" #Indicate it did not change
-      buffer += int(input(pin)) #Put 0 if low, 1 if high
-    sleep(0.1) #Sleep 100 ms between checking
+        states[pin] = G.input(pin) #Update stored value
+        counters[pin] = 0 
+    
+    #Every time we update timers, so every time we send message
+    #Put the time in current state as hex, not exceeding 4 characters. Then put high or low on pin
+    addToQueue("".join("{:04X}{:1d}".format(min(0xFFFF, counters[pin]), states[pin]) for pin in GPIOs))
+    sleep(GPIO_WAIT_TIME) #Sleep between checking
 
 # creates a string like '{:.2f}, {:.2f}...' to be filled with data
 # if you want non truncated data, set truncated to false

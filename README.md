@@ -39,17 +39,40 @@ Rocket Code:
   3. GPS over GPIO Serial ports. This sends configurable data at 1HZ (can be configured up to 10Hz)
       Use my python library for interacting with this
   4. Waiting for several GPIO pins to have voltage across them (GPIO pin will be pulled high). 
+      
       a) The lux sensor will pull high when there is light. As long as it is high we want to know that
+      
       b) There will be 2 different altimeters will pull high for a certain fraction of a second (ask Dan what time range you should be concerned about)
           After they have pulled, we want to continuously send that they have pulled (so have a toggle)
+      
       c) Also there will be a tilt check also hooked up to a GPIO. On the ground, we want it VERY obvious if this pulls high (it means the rocket is tilted sideways)
           We might actually connect this over SPI, in which case you will be sending BerryIMU data from this
           
   Structure:
-    Initialize things. Define interfaces that can be used by multiple threads (message queues, synchronous lists, etc.)
-    
-    Define your thread functions
-      Antenna should maintain a list of last message from each thread (or something), poll a message queue, then send data to radio over serial
-      All other threads are basically polling their interface, sending a message to queue if necessary
-      
-    Run all threads
+  Initialize things. Define interfaces that can be used by multiple threads (message queues, synchronous lists, etc.)
+
+  Define your thread functions
+    Antenna should maintain a list of last message from each thread (or something), poll a message queue, then send data to radio over serial
+    All other threads are basically polling their interface, sending a message to queue if necessary
+
+  Run all threads
+
+GUI Ideas:
+
+Using matplotlib for the graphs. Probably implement a PyQt5 backend so that we can use tabs. Tabs are to best use the limited screen space, and we don't have to render
+ each graph for every update, only the one we're looking at.
+ 
+Graphs:
+  Orientation of the rocket
+  Map of GPS vs starting (plot path)
+  GPIO Pins on/off
+  Packet loss % as number (maybe line plot?)
+  Temperature and pressure line graphs
+  Acceleration line graph
+  Signal strength
+
+Updating graphs: Use an animate function, update 2 Hz (500ms)
+
+Graphing setup should be on a separate thread from data collection
+
+Make it pretty

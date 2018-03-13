@@ -1,11 +1,17 @@
+
+'''
+serial - for sending data to and from external devices like the accelerometer
+sys - for information about hardware on this system
+math - for math related functions
+logging - for clear and pretty output 
+'''
+import serial
+import sys
+import logging
 import tkinter as tk
 import matplotlib
 import matplotlib.animation as animation
-import urllib
-import json
-import pandas as pd
-import numpy as np
-import os
+import time
 
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2TkAgg
 from matplotlib.figure import Figure
@@ -18,6 +24,26 @@ matplotlib.use("TkAgg")
 # The font used in all of the text
 LARGE_FONT = ("Verdana", 12)
 
+# create formatters for the logger
+format = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s)')
+rawformat = logging.Formatter('%(message)s)')
+# initialize our logger
+logger = logging.getLogger("groundServer")
+logger.setLevel(logging.DEBUG)
+# create a file to log data to
+fileHandler = logging.FileHandler("data.log", mode = "a", delay = True)
+fileHandler.setFormatter(format)
+logger.addHandler(fileHandler)
+# create file to log raw data to
+fileHandler = logging.FileHandler("raw.log", mode = "a", delay = True)
+fileHandler.setFormatter(rawformat)
+logger.addHandler(fileHandler)
+# create a handler that prints out thing to stdout
+outHandler = logging.StreamHandler(sys.stdout)
+outHandler.setFormatter(format)
+logger.addHandler(outHandler)
+# set the level to info so we don't get so much spam
+logger.setLevel(logging.INFO)
 
 # Figures for each individual page
 accelerationFig = Figure(figsize = (5, 4), dpi = 100)
@@ -28,79 +54,51 @@ accelerationPlot = accelerationFig.add_subplot(111)
 tempPlot = tempPressFig.add_subplot(211)
 pressPlot = tempPressFig.add_subplot(212)
 
-class RocketGUI(tk.Tk):
-  def __init__(self, *args, **kwargs):
-    # call init of the parent class
-    tk.Tk.__init__(self, *args, **kwargs)
+buffer = {
+  "berryImuData": "",
+  "gpsData": "",
+  "gpioData": ""
+}
 
-    tk.Tk.wm_title(self, "Rocket Realtime Data Visualization")
+class RocketGUI():
+  def __init__(self, root):
+    self.root=root
+    nb = ttk.Notebook(root)
 
-    container = tk.Frame(self)
-    # way of populating and situating widgets in a frame: pack (other is grid)
-    container.pack(side = "top", fill = "both",expand = True)
-    # just some config settings
-    container.grid_rowconfigure(0, weight = 1)
-    container.grid_columnconfigure(0, weight = 1)
+    # tuple of tuples containing our frames and the title of their tabs
+    frames = (
+      (StartPage, 'Start'), 
+      (AccelerationPage, 'Acceleration'),
+      (TempPressPage, 'Temperature & Pressure'),
+      (GPIOPage, 'GPIO')
+    )
 
-    self.frames = {}
-    # creates all the frames to be used in the application
-    # frames are the individual tabs
-    for F in (StartPage, PageOne, AccelerationPage, TempPressPage):
-      frame = F(container, self)
-      self.frames[F] = frame
-      frame.grid(row = 0,column = 0,sticky = "nsew")
-    # we are placing our widgets in a grid (0,0) here and sticky says what direction to stretch in
-    # in this case sticky is all 4 directions (north, south, east, west)
-
-    # show_frame is a method to show the frame
-    self.show_frame(StartPage)
-
-
-  def show_frame(self, controller):
-    frame = self.frames[controller]
-    # brings frame to top for user to see
-    frame.tkraise()
+    for F in frames:
+      # iterate through and add all the frames with their titles to the app
+      frame = F[0]()
+      nb.add(frame, text = F[1])    
+    nb.pack()
 
 # class that is a frame in out tk gui application
 class StartPage(tk.Frame):
-
-  def __init__(self, parent, controller):
-    # call the init of the parent class
-    tk.Frame.__init__(self, parent)
+  def __init__(self, *args, **kw):
+    # call the init of the  parent class
+    tk.Frame.__init__(self, *args, **kw)
     # make a simple label
     label = ttk.Label(self, text = "This is the Start Page", font = LARGE_FONT)
     # add padding on the left and y axis
     label.pack(pady = 10, padx = 10)
 
-    accelButton = ttk.Button(self, text = "View Acceleration", command = lambda: controller.show_frame(AccelerationPage))
-    accelButton.pack()
-
-    tempPressButton = ttk.Button(self, text = "View Temperature and Pressure", command = lambda: controller.show_frame(TempPressPage))
-    tempPressButton.pack()
-
-    quitButton = ttk.Button(self, text = "Quit", command = quit)
-    quitButton.pack()
-
-class PageOne(tk.Frame):
-
-  def __init__(self, parent, controller):
-    tk.Frame.__init__(self, parent)
-    label = ttk.Label(self, text = "Page One!!!", font=LARGE_FONT)
-    label.pack(pady = 10,padx = 10)
-
-    button1 = ttk.Button(self, text = "Back to Home", command = lambda: controller.show_frame(StartPage))
-    button1.pack()
-
-    button2 = ttk.Button(self, text = "Page Two",command = lambda: controller.show_frame(PageTwo))
-    button2.pack()
-
 class AccelerationPage(tk.Frame):
-
-  def __init__(self, parent, controller):
-    # typical navigation stuff
-    tk.Frame.__init__(self, parent)
+  def __init__(self, *args, **kw):
+    # data read from buffer
+    self.accel = []
+    self.time = []
+    # call the init of the parent class
+    tk.Frame.__init__(self, *args, **kw)
     label = tk.Label(self, text = "Magnitude of Acceleration / Time Unit", font = LARGE_FONT)
     label.pack(pady = 10,padx = 10)
+    self.bind("<<event>>", update)
     # canvas setup
     canvas = FigureCanvasTkAgg(accelerationFig, self)
     canvas.show()
@@ -108,17 +106,26 @@ class AccelerationPage(tk.Frame):
     # toolbar
     toolbar = NavigationToolbar2TkAgg(canvas,self)
     toolbar.update()
-    canvas._tkcanvas.pack(side = tk.TOP, fill = tk.BOTH, expand = True)
+    canvas._tkcanvas.pack(side = tk.TOP, fill = tk.BOTH, expand = True)   
 
-    button1 = ttk.Button(self, text = "Back to Home", command = lambda: controller.show_frame(StartPage))
-    button1.pack()
+  def update():
+    data = buffer["berryImuData"].split(",")
+    accelMagnitude = sqrt(int(data[0])**2 + int(data[1])**2 + int(data[2])**2)
+    self.accel.append(accelMagnitude)
+    self.time.append(time.time()) 
 
 class TempPressPage(tk.Frame):
-  
-  def __init__(self, parent, controller):
-    tk.Frame.__init__(self, parent)
+  def __init__(self, *args, **kw):
+    # data read from buffer
+    self.temp = []
+    self.press = []
+    self.time = []
+    # call the init of the parent class
+    tk.Frame.__init__(self, *args, **kw)
     label = tk.Label(self, text = "Temperature and Pressure / Time Unit", font = LARGE_FONT)
     label.pack(pady = 10, padx = 10)
+
+    self.bind("<<event>>", update)
     # canvas setup 
     canvas = FigureCanvasTkAgg(tempPressFig, self)
     canvas.show()
@@ -127,29 +134,113 @@ class TempPressPage(tk.Frame):
     toolbar = NavigationToolbar2TkAgg(canvas,self)
     toolbar.update()
     canvas._tkcanvas.pack(side = tk.TOP, fill = tk.BOTH, expand = True)
+  
+  def update():
+    data = buffer["berryImuData"].split(",")
+    tempData = int(data[9])
+    pressData = int(data[10])
+    self.temp.append(tempData)
+    self.press.append(pressData)
+    self.time.append(time.time())
+
+class GPIOPage(tk.Frame):
+  def __init__(self, *args, **kw):
+    # data read from buffer
+    self.gpio = []
+    # tk setup
+    tk.Frame.__init__(self, *args, **kw)
+    canvas = tk.Canvas(self)
+    self.canvas = canvas
+    # starting position of the circles
+    x0, y0, x1, y1 = 50, 50, 50, 50
+    # the change in position for each circle
+    dx, dy = 30, 30
+    # test boolean to change color
+    b = True
+    self.b = b
+    # array of circle item references
+    circles = []
+    for i in range(1, 41):
+      # draw the circle and save the reference
+      circles.append(canvas.create_oval(x0, y0, x1, y1, outline = "#0f0", fill = "#0f0", width = 20))
+      # draw the text corresponding to the gpio pin
+      canvas.create_text(x0, y0, text = str(i), anchor = tk.NW)
+      # incrememt y position
+      y0 += dy
+      y1 += dy
+      # if it is the 20th gpio move the x position over by double dx
+      if (i % 20 == 0):
+        x0 += 2*dx
+        x1 += 2*dx
+        y0, y1 = 50, 50
+      # if it is the any 10 gpio position move it over by dx
+      elif (i % 10 == 0):
+        x0 += dx
+        x1 += dx
+        y0, y1 = 50, 50
+    canvas.pack(fill = tk.BOTH, expand = 1)
+  # function to test changing the circle color based on a boolean
+  def click(self, canvas, i):
+    self.b = not self.b
+    if self.b:
+      canvas.after(10, lambda: canvas.itemconfig(i, outline = "#0f0", fill = "#0f0"))
+    else:
+      canvas.after(10, lambda: canvas.itemconfig(i, outline = "#f00", fill = "#f00"))
     
-    button = ttk.Button(self, text = "Back to Home", command = lambda: controller.show_frame(StartPage))
-    button.pack()
+  def update():
+    
 
-
-def qf(quickPrint):
-  print(quickPrint)
-
+# class for the map page
+class MapPage(tk.Frame):
+  def __init__(self, *args, **kw):
+    tk.Frame.__init__(self, *args, **kw)
+    
 def animateAcceleration(i):
+  
   # this function animates the data being pulled from the file
-  pullData = open('sampleText.txt','r').read()
-  dataArray = pullData.split('\n')
-  xar=[]
-  yar=[]
-  for eachLine in dataArray:
-      if len(eachLine)>1:
-          x,y = eachLine.split(',')
-          xar.append(int(x))
-          yar.append(int(y))
-  accelerationPlot.clear()
-  accelerationPlot.plot(xar,yar)
+  # pullData = open('sampleText.txt','r').read()
+  # dataArray = pullData.split('\n')
+  # xar=[]
+  # yar=[]
+  # for eachLine in dataArray:
+  #     if len(eachLine)>1:
+  #         x,y = eachLine.split(',')
+  #         xar.append(int(x))
+  #         yar.append(int(y))
+  # accelerationPlot.clear()
+  # accelerationPlot.plot(xar,yar)
 
-app = RocketGUI()
-accelerationAnimation = animation.FuncAnimation(accelerationFig, animateAcceleration, interval = 1000)
-app.mainloop()
 
+def readBuffer():
+  # read one byte at a time until we read newline character
+  # then log the message that was received.
+  stringBuffer = ""
+  charFromStream = ""
+  berryImuData = ""
+  gpsData = ""
+  gpioData = ""
+  while charFromStream != '\n':
+    charFromStream = ser.read(1).decode("utf-8")
+    if charFromStream == -1:
+      break
+    if charFromStream != '\n':
+      stringBuffer += charFromStream
+
+  logger.debug("Message: %s", stringBuffer)
+  # split up the data from the string into their respective parts
+  berryImuData, gpsData, gpioData = stringBuffer.split("|")
+  buffer["berryImuData"] = berryImuData
+  buffer["gpsData"] = gpsData
+  buffer["gpioData"] = gpioData
+  readBuffer.root.after(10, readBuffer)
+
+if __name__ == '__main__':
+  root = tk.Tk()
+  root.option_add('*font', ('verdana', 9, 'normal'))
+  root.title("Rocket Data Visualization")
+  display = RocketGUI(root)
+  accelerationAnimation = animation.FuncAnimation(accelerationFig, animateAcceleration, interval = 500)
+  logger.info("Initializing serial connection and antenna...")
+  readBuffer.root = root
+  root.after(10, readBuffer)
+  root.mainloop()

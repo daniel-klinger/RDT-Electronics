@@ -21,6 +21,7 @@ from tkinter import ttk
 style.use('ggplot')
 matplotlib.use("TkAgg")
 
+#ser = serial.Serial('dev/ttyUSB0')
 # The font used in all of the text
 LARGE_FONT = ("Verdana", 12)
 
@@ -66,17 +67,16 @@ class RocketGUI():
     nb = ttk.Notebook(root)
 
     # tuple of tuples containing our frames and the title of their tabs
-    frames = (
-      (StartPage, 'Start'), 
-      (AccelerationPage, 'Acceleration'),
-      (TempPressPage, 'Temperature & Pressure'),
-      (GPIOPage, 'GPIO')
+    self.frames = (
+      (StartPage(), 'Start'), 
+      (AccelerationPage(), 'Acceleration'),
+      (TempPressPage(), 'Temperature & Pressure'),
+      (GPIOPage(), 'GPIO')
     )
 
-    for F in frames:
+    for F in self.frames:
       # iterate through and add all the frames with their titles to the app
-      frame = F[0]()
-      nb.add(frame, text = F[1])    
+      nb.add(F[0], text = F[1])    
     nb.pack()
 
 # class that is a frame in out tk gui application
@@ -98,7 +98,7 @@ class AccelerationPage(tk.Frame):
     tk.Frame.__init__(self, *args, **kw)
     label = tk.Label(self, text = "Magnitude of Acceleration / Time Unit", font = LARGE_FONT)
     label.pack(pady = 10,padx = 10)
-    self.bind("<<event>>", update)
+    self.bind("<<event>>", self.update)
     # canvas setup
     canvas = FigureCanvasTkAgg(accelerationFig, self)
     canvas.show()
@@ -113,6 +113,18 @@ class AccelerationPage(tk.Frame):
     accelMagnitude = sqrt(int(data[0])**2 + int(data[1])**2 + int(data[2])**2)
     self.accel.append(accelMagnitude)
     self.time.append(time.time()) 
+  
+  def animateAcceleration(self, i):
+    # this function animates the data being pulled from the file
+    pullData = open('sampleText.txt','r').read()
+    dataArray = pullData.split('\n')
+    for eachLine in dataArray:
+        if len(eachLine)>1:
+            a,t = eachLine.split(',')
+            self.accel.append(int(a))
+            self.time.append(int(t))
+    accelerationPlot.clear()
+    accelerationPlot.plot(self.accel, self.time)
 
 class TempPressPage(tk.Frame):
   def __init__(self, *args, **kw):
@@ -125,7 +137,7 @@ class TempPressPage(tk.Frame):
     label = tk.Label(self, text = "Temperature and Pressure / Time Unit", font = LARGE_FONT)
     label.pack(pady = 10, padx = 10)
 
-    self.bind("<<event>>", update)
+    self.bind("<<event>>", self.update)
     # canvas setup 
     canvas = FigureCanvasTkAgg(tempPressFig, self)
     canvas.show()
@@ -188,29 +200,13 @@ class GPIOPage(tk.Frame):
       canvas.after(10, lambda: canvas.itemconfig(i, outline = "#f00", fill = "#f00"))
     
   def update():
-    
+    pass
 
 # class for the map page
 class MapPage(tk.Frame):
   def __init__(self, *args, **kw):
     tk.Frame.__init__(self, *args, **kw)
-    
-def animateAcceleration(i):
   
-  # this function animates the data being pulled from the file
-  # pullData = open('sampleText.txt','r').read()
-  # dataArray = pullData.split('\n')
-  # xar=[]
-  # yar=[]
-  # for eachLine in dataArray:
-  #     if len(eachLine)>1:
-  #         x,y = eachLine.split(',')
-  #         xar.append(int(x))
-  #         yar.append(int(y))
-  # accelerationPlot.clear()
-  # accelerationPlot.plot(xar,yar)
-
-
 def readBuffer():
   # read one byte at a time until we read newline character
   # then log the message that was received.
@@ -239,7 +235,8 @@ if __name__ == '__main__':
   root.option_add('*font', ('verdana', 9, 'normal'))
   root.title("Rocket Data Visualization")
   display = RocketGUI(root)
-  accelerationAnimation = animation.FuncAnimation(accelerationFig, animateAcceleration, interval = 500)
+  # set up the animation function for acceleration
+  accelerationAnimation = animation.FuncAnimation(accelerationFig, display.frames[1][0].animateAcceleration, interval = 500)
   logger.info("Initializing serial connection and antenna...")
   readBuffer.root = root
   root.after(10, readBuffer)

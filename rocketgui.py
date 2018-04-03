@@ -5,12 +5,16 @@ sys - for information about hardware on this system
 math - for math related functions
 logging - for clear and pretty output 
 '''
-import serial
+try:
+  import serial
+except ImportError:
+  pass
 import sys
 import logging
 import tkinter as tk
 import matplotlib
 import matplotlib.animation as animation
+import math
 import time
 
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2TkAgg
@@ -26,25 +30,27 @@ matplotlib.use("TkAgg")
 LARGE_FONT = ("Verdana", 12)
 
 # create formatters for the logger
-format = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s)')
-rawformat = logging.Formatter('%(message)s)')
+format = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
+rawformat = logging.Formatter('%(message)s')
 # initialize our logger
 logger = logging.getLogger("groundServer")
 logger.setLevel(logging.DEBUG)
 # create a file to log data to
 fileHandler = logging.FileHandler("data.log", mode = "a", delay = True)
 fileHandler.setFormatter(format)
+fileHandler.setLevel(logging.INFO)
 logger.addHandler(fileHandler)
 # create file to log raw data to
 fileHandler = logging.FileHandler("raw.log", mode = "a", delay = True)
 fileHandler.setFormatter(rawformat)
+fileHandler.setLevel(logging.DEBUG)
 logger.addHandler(fileHandler)
 # create a handler that prints out thing to stdout
 outHandler = logging.StreamHandler(sys.stdout)
 outHandler.setFormatter(format)
+outHandler.setLevel(logging.INFO)
 logger.addHandler(outHandler)
 # set the level to info so we don't get so much spam
-logger.setLevel(logging.INFO)
 
 # Figures for each individual page
 accelerationFig = Figure(figsize = (5, 4), dpi = 100)
@@ -95,10 +101,10 @@ class AccelerationPage(tk.Frame):
     self.accel = []
     self.time = []
     # call the init of the parent class
-    tk.Frame.__init__(self, *args, **kw)
+    super().__init__(*args, **kw)
     label = tk.Label(self, text = "Magnitude of Acceleration / Time Unit", font = LARGE_FONT)
     label.pack(pady = 10,padx = 10)
-    self.bind("<<event>>", self.update)
+    self.master.bind("<<Update>>", self.update)
     # canvas setup
     canvas = FigureCanvasTkAgg(accelerationFig, self)
     canvas.show()
@@ -108,23 +114,20 @@ class AccelerationPage(tk.Frame):
     toolbar.update()
     canvas._tkcanvas.pack(side = tk.TOP, fill = tk.BOTH, expand = True)   
 
-  def update():
+  def update(self, event):
+    print("Updating")
     data = buffer["berryImuData"].split(",")
-    accelMagnitude = sqrt(int(data[0])**2 + int(data[1])**2 + int(data[2])**2)
+    accelMagnitude = math.sqrt(int(data[0])**2 + int(data[1])**2 + int(data[2])**2)
     self.accel.append(accelMagnitude)
-    self.time.append(time.time()) 
+    self.time.append(time.time())
+    for i in range(len(self.time)-1, 0, -1):
+      
   
   def animateAcceleration(self, i):
     # this function animates the data being pulled from the file
-    pullData = open('sampleText.txt','r').read()
-    dataArray = pullData.split('\n')
-    for eachLine in dataArray:
-        if len(eachLine)>1:
-            a,t = eachLine.split(',')
-            self.accel.append(int(a))
-            self.time.append(int(t))
     accelerationPlot.clear()
-    accelerationPlot.plot(self.accel, self.time)
+    startTime = self.time[0]
+    accelerationPlot.plot(list(map(lambda t: t-startTime, self.time)), self.accel)
 
 class TempPressPage(tk.Frame):
   def __init__(self, *args, **kw):
@@ -137,7 +140,7 @@ class TempPressPage(tk.Frame):
     label = tk.Label(self, text = "Temperature and Pressure / Time Unit", font = LARGE_FONT)
     label.pack(pady = 10, padx = 10)
 
-    self.bind("<<event>>", self.update)
+    #self.bind("<<event>>", self.update)
     # canvas setup 
     canvas = FigureCanvasTkAgg(tempPressFig, self)
     canvas.show()
@@ -230,6 +233,15 @@ def readBuffer():
   buffer["gpioData"] = gpioData
   readBuffer.root.after(10, readBuffer)
 
+def pretendToReadBuffer(i = 0):
+  listOfPoints = [(1,52, 77), (2,33, 12), (3, 5, 89), (4, 50, 1), (5, 25, 2), (6, 66, 4)]
+  if i >= 30:#or len(listOfPoints):
+    i = 0
+  buffer["berryImuData"] = ",".join(map(str, (i**2, i**2, i**2)))
+  pretendToReadBuffer.root.after(100, pretendToReadBuffer, i+1)
+  pretendToReadBuffer.root.event_generate("<<Update>>", when="tail")
+    
+
 if __name__ == '__main__':
   root = tk.Tk()
   root.option_add('*font', ('verdana', 9, 'normal'))
@@ -238,6 +250,12 @@ if __name__ == '__main__':
   # set up the animation function for acceleration
   accelerationAnimation = animation.FuncAnimation(accelerationFig, display.frames[1][0].animateAcceleration, interval = 500)
   logger.info("Initializing serial connection and antenna...")
-  readBuffer.root = root
-  root.after(10, readBuffer)
+  try:
+    ser = serial.Serial("dev/ttyUSB0") #TODO: Add baudrate
+    readBuffer.root = root
+    root.after(10, readBuffer)
+  except NameError:
+    logger.info("Not connected to Pi: Not starting serial")
+    pretendToReadBuffer.root = root
+    pretendToReadBuffer()
   root.mainloop()

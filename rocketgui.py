@@ -113,6 +113,8 @@ class AccelerationPage(tk.Frame):
     toolbar = NavigationToolbar2TkAgg(canvas,self)
     toolbar.update()
     canvas._tkcanvas.pack(side = tk.TOP, fill = tk.BOTH, expand = True)   
+    
+    self.startTime = time.time()
 
   def update(self, event):
     print("Updating")
@@ -120,14 +122,19 @@ class AccelerationPage(tk.Frame):
     accelMagnitude = math.sqrt(int(data[0])**2 + int(data[1])**2 + int(data[2])**2)
     self.accel.append(accelMagnitude)
     self.time.append(time.time())
+    timeLimit = 10
+    indexAtTime = None
     for i in range(len(self.time)-1, 0, -1):
-      
+      if time.time() - self.time[i] > timeLimit:
+        indexAtTime = i
+        break
+    self.accel = self.accel[indexAtTime:]
+    self.time  = self.time[indexAtTime:]
   
   def animateAcceleration(self, i):
     # this function animates the data being pulled from the file
     accelerationPlot.clear()
-    startTime = self.time[0]
-    accelerationPlot.plot(list(map(lambda t: t-startTime, self.time)), self.accel)
+    accelerationPlot.plot(list(map(lambda t: t-self.startTime, self.time)), self.accel)
 
 class TempPressPage(tk.Frame):
   def __init__(self, *args, **kw):

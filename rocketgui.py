@@ -5,6 +5,9 @@ sys - for information about hardware on this system
 math - for math related functions
 logging - for clear and pretty output 
 '''
+
+
+"""To DO: Implement all handlers properly"""
 try:
   import serial
 except ImportError:
@@ -64,20 +67,102 @@ pressPlot = tempPressFig.add_subplot(212)
 buffer = {
   "berryImuData": "",
   "gpsData": "",
-  "gpioData": ""
+  "temppressoroni": "",
 }
 
+eventFxnList=[]
+def doAllEvents(thatEvent):
+  for i in eventFxnList:
+    i(thatEvent)
+    
+class Root(tk.Tk):
+  BUFFER_INTERVAL = 10 #In ms
+  MAX_BUFFER_LENGTH = 30 #entries
+
+  def __init__(self, ser, *arg, **kwargs):
+    super().__init__(*arg, **kwargs)
+    self.handlers = []
+    self.processingBuffer = {} #Dict of processor name: list of data objects to project
+    self.ser = ser
+    
+    self.nb = ttk.Notebook(self)
+    
+  def readBuffer(self):
+    # read one byte at a time until we read newline character
+    # then log the message that was received.
+    stringBuffer = ""
+    while True:
+      lastChar = ser.read(1).decode("utf-8")
+      if lastChar != '\n':
+        stringBuffer += lastChar
+      else:
+        break
+
+    logger.info("Message: %s", stringBuffer)
+    # split up the data from the string into their respective parts
+    dataParts = stringBuffer.split("|")
+    #Put each piece of data into their respective buffers
+    for i in range(len(dataParts)):
+      key = self.handlers[i].name
+      #Insert a 2-tuple of current time and data to process
+      self.processingBuffer[key].insert(0, (time.time(), dataParts[i]))
+      if len(self.processingBuffer[key]) >= self.MAX_BUFFER_LENGTH:
+        self.processingBuffer[key].pop() #Remove last element
+      
+    #Update the currently displayed window
+    self.updateCurrent()
+    
+    #Then prepare to read the buffer again after interval
+    self.after(self.BUFFER_INTERVAL, self.readBuffer)
+    
+  #Just calls the update method of the currently selected handler
+  def updateCurrent(self):
+    handler = self.handlers[self.nb.index(self.nb.select())] 
+    handler.updateFromNew(self.processingBuffer[handler.name])
+    
+  def registerHandler(self, handler):
+    if not isinstance(handler, Handler):
+      raise TypeError("new handler must be of type Handler")
+    
+    self.handlers.append(handler)
+    self.processingBuffer[handler.name] = []
+    
+  def startProcessing(self):
+    #Begin the processing loop
+    self.after(10, self.readBuffer)
+    #Begin main loop
+    self.mainloop()
+    
+
+#Base class for all data handlers. Each handler is associated with a window.
+class Handler(tk.Frame):
+  def __init__(self, root, name):
+    super().__init__(root)
+    self.name = name
+    self.lastUpdated = 0
+    self.dataBuffer = [] #Buffer of things that will be graphed. List of 2-tuple (timestamp, data)
+    
+  def updateFromNew(self, bufferArray):
+    self.lastUpdated = time.time()
+    self.update(bufferArray)
+    
+  def update(self, bufferArray):
+    raise NotImplementedError("update should be subclassed")
+    
+  def animate(self):
+    raise NotImplementedError("animate should be subclassed")
+    
 class RocketGUI():
   def __init__(self, root):
     self.root=root
     nb = ttk.Notebook(root)
-
+    root.bind("<<Update>>",doAllEvents)
     # tuple of tuples containing our frames and the title of their tabs
     self.frames = (
       (StartPage(), 'Start'), 
       (AccelerationPage(), 'Acceleration'),
       (TempPressPage(), 'Temperature & Pressure'),
-      (GPIOPage(), 'GPIO')
+      #(GPIOPage(), 'GPIO')
     )
 
     for F in self.frames:
@@ -104,7 +189,7 @@ class AccelerationPage(tk.Frame):
     super().__init__(*args, **kw)
     label = tk.Label(self, text = "Magnitude of Acceleration / Time Unit", font = LARGE_FONT)
     label.pack(pady = 10,padx = 10)
-    self.master.bind("<<Update>>", self.update)
+    eventFxnList.append(self.update)
     # canvas setup
     canvas = FigureCanvasTkAgg(accelerationFig, self)
     canvas.show()
@@ -146,8 +231,7 @@ class TempPressPage(tk.Frame):
     tk.Frame.__init__(self, *args, **kw)
     label = tk.Label(self, text = "Temperature and Pressure / Time Unit", font = LARGE_FONT)
     label.pack(pady = 10, padx = 10)
-
-    #self.bind("<<event>>", self.update)
+    eventFxnList.append(self.update)
     # canvas setup 
     canvas = FigureCanvasTkAgg(tempPressFig, self)
     canvas.show()
@@ -156,62 +240,35 @@ class TempPressPage(tk.Frame):
     toolbar = NavigationToolbar2TkAgg(canvas,self)
     toolbar.update()
     canvas._tkcanvas.pack(side = tk.TOP, fill = tk.BOTH, expand = True)
+    
+    self.startTime=time.time()
   
-  def update():
-    data = buffer["berryImuData"].split(",")
-    tempData = int(data[9])
-    pressData = int(data[10])
+  def update(self, event):
+    print('HEEEEEE')
+    data = buffer["temppressoroni"].split(",")
+    tempData = float(data[0])
+    pressData = float(data[1])
     self.temp.append(tempData)
     self.press.append(pressData)
     self.time.append(time.time())
-
-class GPIOPage(tk.Frame):
-  def __init__(self, *args, **kw):
-    # data read from buffer
-    self.gpio = []
-    # tk setup
-    tk.Frame.__init__(self, *args, **kw)
-    canvas = tk.Canvas(self)
-    self.canvas = canvas
-    # starting position of the circles
-    x0, y0, x1, y1 = 50, 50, 50, 50
-    # the change in position for each circle
-    dx, dy = 30, 30
-    # test boolean to change color
-    b = True
-    self.b = b
-    # array of circle item references
-    circles = []
-    for i in range(1, 41):
-      # draw the circle and save the reference
-      circles.append(canvas.create_oval(x0, y0, x1, y1, outline = "#0f0", fill = "#0f0", width = 20))
-      # draw the text corresponding to the gpio pin
-      canvas.create_text(x0, y0, text = str(i), anchor = tk.NW)
-      # incrememt y position
-      y0 += dy
-      y1 += dy
-      # if it is the 20th gpio move the x position over by double dx
-      if (i % 20 == 0):
-        x0 += 2*dx
-        x1 += 2*dx
-        y0, y1 = 50, 50
-      # if it is the any 10 gpio position move it over by dx
-      elif (i % 10 == 0):
-        x0 += dx
-        x1 += dx
-        y0, y1 = 50, 50
-    canvas.pack(fill = tk.BOTH, expand = 1)
-  # function to test changing the circle color based on a boolean
-  def click(self, canvas, i):
-    self.b = not self.b
-    if self.b:
-      canvas.after(10, lambda: canvas.itemconfig(i, outline = "#0f0", fill = "#0f0"))
-    else:
-      canvas.after(10, lambda: canvas.itemconfig(i, outline = "#f00", fill = "#f00"))
+    timeLimit2=10
+    indexAtTime=None
+    for i in range(len(self.time)-1,0,-1):
+      if time.time()-self.time[i]>timeLimit2:
+        indexAtTime=i
+        break
+    self.temp=self.temp[indexAtTime:]
+    self.press=self.press[indexAtTime:]
+    self.time=self.time[indexAtTime:]
+  def animateTempandPress(self,i):
+    # this function animates the data being pulled from the file
+    print('2222222')
+    tempPlot.clear()
+    pressPlot.clear()
+    tempPlot.plot(list(map(lambda t: t-self.startTime, self.time)), self.temp)
+    pressPlot.plot(list(map(lambda t: t-self.startTime, self.time)), self.press)
     
-  def update():
-    pass
-
+        
 # class for the map page
 class MapPage(tk.Frame):
   def __init__(self, *args, **kw):
@@ -240,11 +297,36 @@ def readBuffer():
   buffer["gpioData"] = gpioData
   readBuffer.root.after(10, readBuffer)
 
+#Tester for when we don't have actual data
+class PretendBuffer():
+  RECEIVE_INTERVAL = 0.5 #in seconds
+  def __init__(self):
+    self.buffer = io.BytesIO()
+    
+  def runThread(self):
+    listOfPoints = [(1,52, 77), (2,33, 12), (3, 5, 89), (4, 50, 1), (5, 25, 2), (6, 66, 4)]
+    temppressfakenews=[(1,34),(2,32),(3,12),(4,37),(5,45),(6,60),(7,79),(8,89)]
+      
+    while True:
+      time.sleep(self.RECEIVE_INTERVAL)
+      berryData = ",".join(map(str, (i**2, i**2, i**2)))
+      gpsData = str(temppressfakenews[i%8])[1:-1]
+      self.buffer.write(bytes("|".join(berryData, gpsData)))
+      
+  def read(self, bytes=None):
+    while len(self.buffer) == 0:
+      time.sleep(0.05)
+    self.buffer.seek(0)
+    return self.buffer.read(bytes)
+      
+  
 def pretendToReadBuffer(i = 0):
   listOfPoints = [(1,52, 77), (2,33, 12), (3, 5, 89), (4, 50, 1), (5, 25, 2), (6, 66, 4)]
+  temppressfakenews=[(1,34),(2,32),(3,12),(4,37),(5,45),(6,60),(7,79),(8,89)]
   if i >= 30:#or len(listOfPoints):
     i = 0
   buffer["berryImuData"] = ",".join(map(str, (i**2, i**2, i**2)))
+  buffer["temppressoroni"]=str(temppressfakenews[i%8])[1:-1]
   pretendToReadBuffer.root.after(100, pretendToReadBuffer, i+1)
   pretendToReadBuffer.root.event_generate("<<Update>>", when="tail")
     
@@ -256,6 +338,7 @@ if __name__ == '__main__':
   display = RocketGUI(root)
   # set up the animation function for acceleration
   accelerationAnimation = animation.FuncAnimation(accelerationFig, display.frames[1][0].animateAcceleration, interval = 500)
+  tempAnimation=animation.FuncAnimation(tempPressFig,display.frames[2][0].animateTempandPress, interval=500)
   logger.info("Initializing serial connection and antenna...")
   try:
     ser = serial.Serial("dev/ttyUSB0") #TODO: Add baudrate

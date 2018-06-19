@@ -11,72 +11,107 @@ from collections import OrderedDict
 from GPSLib import GPS
 from time import sleep
 
-dataQueue = queue.Queue()
-
-messages = OrderedDict()
-
 # create formatters for the logger
 format = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s)')
 # initialize our logger
 logger = logging.getLogger("rocketDevice")
 logger.setLevel(logging.DEBUG)
 # create a file to log data to
-fileHandler = logging.FileHandler("flight.log", mode = "a", delay = True)
+fileHandler = logging.FileHandler("flight.log", mode = "a", delay = False)
 fileHandler.setFormatter(format)
 logger.addHandler(fileHandler)
 
-def addToQueue(message):
-  dataQueue.put([threading.current_thread(), message])
 
+class DataHandler():
+  lastData = OrderedDict = {} #Dict of threadName: data. The last piece of data sent by this thread
+  dataLock = threading.Lock()
+  
+  def __init__(self, name, *args):
+    self.name = name
+    self.lastData[name] = ""
+    self.initialize(*args)
+    
+  @classmethod
+  def getThread(cls, name, initArgs=[], threadArgs=[]):
+    newObj = cls(name, *initArgs) #Initialize
+    return threading.Thread(target = newObj.runThread, name=name, args=*threadArgs)
+    
+  def runThread(self, *args):
+    while True:
+      try:
+        newData = self.getData(*args)
+        logger.info(self.format(newData)) #Just log the new data. Thread and timestamp should be included
+        with self.dataLock: #Make sure that we aren't modifying data as it's sent
+          self.lastData[self.name] = newData
+      except Exception as e:
+        logger.exception("Thread has encountered an exception on data aquisition")
+        
+  def initialize(self, *args):
+    raise NotImplementedError("initialize should be subclassed")
+  
+  def getData(self, *args):
+    raise NotImplementedError("getData should be subclassed")
+
+  #Format a log entry. Intended to be subclassed if necessary
+  def format(self, data):
+    return str(data)
+
+class BerryImuHandler(DataHandler):
+  """
+  Includes Gyroscope, Magnetometer, Temperature, Pressure, and GPS
+  """
+
+  def initialize(self, *args):
+    self.berryImu = BerryImu()
+    self.dataFormat = createDataString(11)
+    
+  def getData(self, *args):
+    pass
+    #INSERT REAL BERRY IMU HANDLING HERE
+    # get readings for accelation
+    accelX = self.berryImu.readACCx()
+    accelY = self.berryImu.readACCy()
+    accelZ = self.berryImu.readACCz()
+    # get readings for magnetometer
+    magX = self.berryImu.readMAGx()
+    magY = self.berryImu.readMAGy()
+    magZ = self.berryImu.readMAGz()
+    # get readings from the gyroscope
+    gyrX = self.berryImu.readGYRx()
+    gyrY = self.berryImu.readGYRy()
+    gyrZ = self.berryImu.readGYRz()
+    # get temperature and pressure readings
+    temp, press = self.berryImu.getTemperatureAndPressure()
+    # add all data to the queue as a string
+    addToQueue(dataFormat.format(accelX, accelY, accelZ,
+                                 magX, magY, magZ,
+                                 gyrX, gyrY, gyrZ,
+                                 temp, press))
+    
+
+class LoadCellHandler():
+  def initialize(self, *args):
+    self.socket = s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind(("", 9999)) #Bind on local host, port 9999
+    s.listen(5) #Accept up to 5 connections at once
+    
+  def getData(self, *args):
+    conn, address = self.socket.accept() #Wait for a connection
+    data = conn.recv(4096).decode("utf-8") #Get the data, decoding it
+    conn.close() #Close the connection
+    return str(round(data, 2)) #Forward the data, rounded to 2 decimals
+    
 # this functions pulls data (message) off of the queue and sends it
 # as a broadcast for the other antenna to receive
 def antenna(ser):
-    global messages
-    while True:
-        try:
-            data = dataQueue.get(timeout = 0.05)
-            #data = (threadName, message)
-            messages[data[0]] = data[1]
-            log.debug("Updated: '%s' to '%s'", data[0], data[1])
-        except Empty:
-            pass
-        finally:
-          ser.write(bytes("|".join(messages.values()), "utf-8"))
-
-def berryImuData():
-  berryImu = BerryImu()
-  # string to be formatted with actual data
-  data = createDataString(11)
+  timeInterval = 0.5 #In seconds
   while True:
-    # get readings for accelation
-    accelX = berryImu.readACCx()
-    accelY = berryImu.readACCy()
-    accelZ = berryImu.readACCz()
-    # get readings for magnetometer
-    magX = berryImu.readMAGx()
-    magY = berryImu.readMAGy()
-    magZ = berryImu.readMAGz()
-    # get readings from the gyroscope
-    gyrX = berryImu.readGYRx()      
-    gyrY = berryImu.readGYRy()        
-    gyrZ = berryImu.readGYRz()
-    # get temperature and pressure readings
-    temp, press = berryImu.getTemperatureAndPressure()
-    # add all data to the queue as a string
-    addToQueue(data.format(accelX, accelY, accelZ,
-                           magX, magY, magZ,
-                           gyrX, gyrY, gyrZ,
-                           temp, press))
+    with DataHandler.dataLock:
+      buffer = "|".join(DataHandler.lastData.values()) #Add together all the values, comma separated
+      log.info("Sending Values: '{}'".format(buffer))
+      ser.write(bytes(buffer), "utf-8")
 
-def gpsData():
-  gps = GPS()
-  # create a string to be formatted by 
-  data = createDataString(2, truncated = False)
-  while True:
-    lat, lng = GPS.getLocation()
-    addToQueue(data.format(lat, lng))
-
-
+"""
 def gpioData():
   import RPi.GPIO as G
   #Time between checking of pins
@@ -114,11 +149,11 @@ def gpioData():
     #Put the time in current state as hex, not exceeding 4 characters. Then put high or low on pin
     addToQueue("".join("{:04X}{:1d}".format(min(0xFFFF, counters[pin]), states[pin]) for pin in GPIOs))
     sleep(GPIO_WAIT_TIME) #Sleep between checking
-
+"""
+    
 # creates a string like '{:.2f}, {:.2f}...' to be filled with data
 # if you want non truncated data, set truncated to false
 def createDataString(numElements, truncated = True):
-  
   if (truncated):
     return ", ".join(["{:.2f}" for i in range(numElements)])
   else:
@@ -132,13 +167,16 @@ if __name__ == "__main__":
   for i in ["berryImu", "gps", "gpio"]:
     messages[i] = None
 
+  logger.info("Initializing serial connection and antenna...")
+  ser = serial.Serial('/dev/ttyUSB0', 9600)
+  ser.open()
+  
+  # set up the threads for collecting data from each sensor and the antenna
+  antennaThread = threading.Thread(target = antenna, name = "antenna", args = (ser,))
+  berryImuThread = BerryImuHandler.getThread("berryImu")
+  payloadThread  = LoadCellHandler.getThread("loadCell")
+  threads = [antennaThread, berryImuThread, payloadThread]
   try:
-    # set up the threads for collecting data from each sensor and the antenna
-    antennaThread = threading.Thread(target = antenna, name = "antenna", args = (ser,))
-    berryImuThread = threading.Thread(target = berryImuData, name = "berryImu")
-    gpsThread = threading.Thread(target = gpsData, name = "gps")
-    gpioThread = threading.Thread(target = gpioData, name = "gpio")
-    threads = [antennaThread, berryImuThread, gpsThread, gpioThread]
     # start all threads
     for t in threads:
       t.start()

@@ -68,7 +68,7 @@ class BerryImuHandler(DataHandler):
   def getData(self, *args):
     pass
     #INSERT REAL BERRY IMU HANDLING HERE
-    # get readings for accelation
+    # get readings for acceleration
     accelX = self.berryImu.readACCx()
     accelY = self.berryImu.readACCy()
     accelZ = self.berryImu.readACCz()
@@ -161,12 +161,6 @@ def createDataString(numElements, truncated = True):
 
 
 if __name__ == "__main__":
-  # Ordered dict orders keys by when they were added
-  # we always want them in this order so we can parse the data
-  # on the ground with the correct values
-  for i in ["berryImu", "gps", "gpio"]:
-    messages[i] = None
-
   logger.info("Initializing serial connection and antenna...")
   ser = serial.Serial('/dev/ttyUSB0', 9600)
   ser.open()

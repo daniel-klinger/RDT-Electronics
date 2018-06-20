@@ -55,14 +55,6 @@ outHandler.setLevel(logging.INFO)
 logger.addHandler(outHandler)
 # set the level to info so we don't get so much spam
 
-# Figures for each individual page
-accelerationFig = Figure(figsize = (5, 4), dpi = 100)
-tempPressFig = Figure(figsize = (5, 4), dpi = 100)
-
-# plots that go in the figures on the pages
-accelerationPlot = accelerationFig.add_subplot(111)
-tempPlot = tempPressFig.add_subplot(211)
-pressPlot = tempPressFig.add_subplot(212)
 
 buffer = {
   "berryImuData": "",
@@ -77,12 +69,11 @@ def doAllEvents(thatEvent):
     
 class Root(tk.Tk):
   BUFFER_INTERVAL = 10 #In ms
-  MAX_BUFFER_LENGTH = 30 #entries
+  MAX_BUFFER_LENGTH = 100 #entries
 
   def __init__(self, ser, *arg, **kwargs):
     super().__init__(*arg, **kwargs)
     self.handlers = []
-    self.processingBuffer = {} #Dict of processor name: list of data objects to project
     self.ser = ser
     
     self.nb = ttk.Notebook(self)
@@ -103,29 +94,22 @@ class Root(tk.Tk):
     dataParts = stringBuffer.split("|")
     #Put each piece of data into their respective buffers
     for i in range(len(dataParts)):
-      key = self.handlers[i].name
-      #Insert a 2-tuple of current time and data to process
-      self.processingBuffer[key].insert(0, (time.time(), dataParts[i]))
-      if len(self.processingBuffer[key]) >= self.MAX_BUFFER_LENGTH:
-        self.processingBuffer[key].pop() #Remove last element
+      handler = self.handlers[i]
+      handler.update(time.time(), dataParts[i])
       
     #Update the currently displayed window
-    self.updateCurrent()
+    handler = self.handlers[self.nb.index(self.nb.select())]
+    Handler.setCurrentHandler(handler)
     
     #Then prepare to read the buffer again after interval
     self.after(self.BUFFER_INTERVAL, self.readBuffer)
-    
-  #Just calls the update method of the currently selected handler
-  def updateCurrent(self):
-    handler = self.handlers[self.nb.index(self.nb.select())] 
-    handler.updateFromNew(self.processingBuffer[handler.name])
     
   def registerHandler(self, handler):
     if not isinstance(handler, Handler):
       raise TypeError("new handler must be of type Handler")
     
     self.handlers.append(handler)
-    self.processingBuffer[handler.name] = []
+    self.nb.add(handler, text=handler.name.title())
     
   def startProcessing(self):
     #Begin the processing loop
@@ -136,21 +120,103 @@ class Root(tk.Tk):
 
 #Base class for all data handlers. Each handler is associated with a window.
 class Handler(tk.Frame):
+  self.programStart = time.time() #Shared by all handlers
+  self.currentHandler = None #To tell if a frame should actually be updated
+
   def __init__(self, root, name):
     super().__init__(root)
     self.name = name
     self.lastUpdated = 0
+    self.timeCutoff = 20 #Seconds
     self.dataBuffer = [] #Buffer of things that will be graphed. List of 2-tuple (timestamp, data)
     
+  def clampDataBuffer(self):
+    cutoffTime = time.time() - self.programStart - self.timeCutoff
+    for i in range(len(self.dataBuffer)-1, -1, -1):
+      if self.dataBuffer[0] < cutoffTime:
+        index = i
+        break
+    else:
+      index = 0
+      
+    self.dataBuffer = self.dataBuffer[index:]
+
   def updateFromNew(self, bufferArray):
     self.lastUpdated = time.time()
     self.update(bufferArray)
+    self.clampDataBuffer()
     
-  def update(self, bufferArray):
+  def update(self, timestamp, dataString):
     raise NotImplementedError("update should be subclassed")
     
   def animate(self):
+    if Handler.currentHandler == self:
+      self._animate()
+  
+  def _animate(self):
     raise NotImplementedError("animate should be subclassed")
+    
+
+class TempPressureHandler(Handler):
+  def __init__(self, root, name):
+    super().__init__(root, name)
+    label = tk.Label(self, text = "Temperature and Pressure / Time Unit", font = LARGE_FONT)
+    label.pack(pady = 10, padx = 10)
+    # Matplotlib setup
+    self.figure = Figure(figsize = (5, 4), dpi = 100)
+    self.tempPlot = self.figure.add_subplot(211)
+    self.pressPlot = self.figure.add_subplot(212)
+    # canvas setup
+    canvas = FigureCanvasTkAgg(self.figure, self)
+    canvas.show()
+    canvas.get_tk_widget().pack(side = tk.BOTTOM, fill = tk.BOTH, expand = True)
+    # toolbar
+    toolbar = NavigationToolbar2TkAgg(canvas,self)
+    toolbar.update()
+    canvas._tkcanvas.pack(side = tk.TOP, fill = tk.BOTH, expand = True)
+    
+    
+  def update(self, timestamp, dataString):
+    #Process each piece of data
+    self.dataBuffer.append((timestamp, map(float, dataString.split(","))))
+    
+  def _animate(self):
+    # this function animates the data being pulled from the file
+    self.tempPlot.clear()
+    self.pressPlot.clear()
+    #Turn a list of tuples into two lists
+    applyTime = lambda inputList, dataIndex: zip(*map(lambda val: (val[0]-self.programStart, val[1][dataIndex]), inputList))
+    self.tempPlot.plot(*applyTime(self.dataBuffer, 0))
+    self.pressPlot.plot(*applyTime(self.dataBuffer, 1))
+    
+class AccelerationHandler(Handler):
+  def __init__(self, root, name):
+    super().__init__(self, root, name)
+    
+    # matplotlib setup
+    self.figure = Figure(figsize = (5, 4), dpi = 100)
+    self.accelPlot = self.figure.add_subplot(111)
+    
+    label = tk.Label(self, text = "Magnitude of Acceleration / Time Unit", font = LARGE_FONT)
+    label.pack(pady = 10,padx = 10)
+    eventFxnList.append(self.update)
+    # canvas setup
+    canvas = FigureCanvasTkAgg(self.figure, self)
+    canvas.show()
+    canvas.get_tk_widget().pack(side = tk.BOTTOM, fill = tk.BOTH, expand = True)
+    # toolbar
+    toolbar = NavigationToolbar2TkAgg(canvas,self)
+    toolbar.update()
+    canvas._tkcanvas.pack(side = tk.TOP, fill = tk.BOTH, expand = True)
+    
+  def update(self, timestamp, dataString):
+    self.dataBuffer.append((timestamp, float(dataString)))
+    
+  def _animate(self):
+    self.accelPlot.clear()
+    #Turn a list of tuples into two lists
+    applyTime = lambda inputList: zip(*map(lambda val: (val[0]-self.programStart, val[1]), inputList))
+    self.accelPlot.plot(*applyTime(self.dataBuffer))
     
 class RocketGUI():
   def __init__(self, root):
@@ -197,7 +263,7 @@ class AccelerationPage(tk.Frame):
     # toolbar
     toolbar = NavigationToolbar2TkAgg(canvas,self)
     toolbar.update()
-    canvas._tkcanvas.pack(side = tk.TOP, fill = tk.BOTH, expand = True)   
+    canvas._tkcanvas.pack(side = tk.TOP, fill = tk.BOTH, expand = True)
     
     self.startTime = time.time()
 
@@ -332,6 +398,13 @@ def pretendToReadBuffer(i = 0):
     
 
 if __name__ == '__main__':
+  root = Root()
+  root.option_add('*font', ('verdana', 9, 'normal'))
+  root.title("Rocket Data Visualization")
+  root.registerHandler(TempPressureHandler(root, "temp and pressure"))
+  root.registerHandler(AccelerationHandler(root, "acceleration"))
+  
+
   root = tk.Tk()
   root.option_add('*font', ('verdana', 9, 'normal'))
   root.title("Rocket Data Visualization")

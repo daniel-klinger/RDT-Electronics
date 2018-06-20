@@ -25,8 +25,8 @@ stopSignal = threading.Event()
 
 #Pin settings
 PIN_MODE = gpio.BCM
-PIN_CLOCK = 10
-PIN_DATA  = 11
+PIN_CLOCK = 18
+PIN_DATA  = 4
 
 GAIN = 64
 
@@ -39,6 +39,17 @@ logging.basicConfig(format="%(asctime)s [%(threadName)s] [%(levelname)s]  %(mess
   logging.FileHandler("loadCell.log", mode="w"),
 ])
 logger = logging
+
+def init():
+  logger.debug("Setting up pins")
+  #Then setup pins
+  gpio.setmode(PIN_MODE)
+  gpio.setup(PIN_CLOCK, gpio.OUT)
+  gpio.setup(PIN_DATA, gpio.IN)
+  #Ensure it is pulled low
+  gpio.output(PIN_CLOCK, False)
+  time.sleep(0.0001) #Ensure it has time to turn on
+  
 
 def processReadings(ipInfo):
   logging.debug("Starting Processor Thread")
@@ -65,7 +76,7 @@ def processReadings(ipInfo):
 
 #Processes a raw reading, and gives out string
 def createReading(value):
-  ouput = value #This is temporary. Ideally we should be transmitting strain, but I don't know the equation.
+  output = value #This is temporary. Ideally we should be transmitting strain, but I don't know the equation.
   #Send a 4-tuple of necessary info
   readingQueue.put((time.time(), value, GAIN, output))
   
@@ -131,20 +142,14 @@ def main():
       logger.debug("Success!")
       ipInfo = (ip, PORT) #Set this for transmission
       break
-    except socket.timeout:
+    except (socket.timeout, OSError):
      logger.debug("Failure!")
   else: #If no ips worked
     logger.debug("No ip address was a valid server. Disabling wifi transmission")
     ipInfo = None
   
-  logger.debug("Setting up pins")
-  #Then setup pins
-  gpio.setmode(PIN_MODE)
-  gpio.setup(PIN_CLOCK, gpio.OUT)
-  gpio.setup(PIN_DATA, gpio.IN)
-  #Ensure it is pulled low
-  gpio.output(PIN_CLOCK, False)
-  time.sleep(0.0001) #Ensure it has time to turn on
+  #Setup pins
+  init()
   
   #Get a tare reading
   try:

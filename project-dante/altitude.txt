@@ -1,0 +1,157 @@
+#include <iostream>
+#include <cstring>
+#include "dante.h"
+
+using namespace std;
+
+
+void Altitude :: readAltitude(const int altitudeValue)
+{
+ {
+  cout<<"Reading Data"<<endl;
+
+  // get the first line of the data file so it is not read
+  fin.getline(dataWord, 500, '\n');
+
+  // get data from linked file
+  while (fin.getline(dataWord, 500, '\n'))
+  {
+    // reset toSpeak array and storeNum array
+    for (int i = 0; i < 10; i++)
+      toSpeak[i] = '\0';
+
+    for (int i = 0; i < 10; i++)
+      storeNum[i] = '\0';
+
+  // convert dataString to Number
+  dataNum = atoi(dataWord);
+
+  // get numeric places of number
+  hundredThousands = (dataNum/100000);
+  tenThousands = (dataNum/10000) % 10;
+  thousands = (dataNum/1000) % 10;
+  hundreds = (dataNum/100) % 10;
+  smallNums = dataNum % 100;
+
+  // copy dataWord to storeNum
+  strcpy(storeNum, dataWord);
+
+  // check word length
+  if(strlen(dataWord)<MAX_LENGTH)
+  {
+    for (int i = 0; i < 10; i++)
+      dataWord[i] = '\0';
+
+
+    for (int i = 0; i<(MAX_LENGTH-strlen(storeNum)); i++)
+    {
+      dataWord[i] = '0';
+    }
+    strcat(dataWord, storeNum);
+  }
+  cout<<dataWord<<endl;
+
+  // speak if something is in the hun tho place
+  if (hundredThousands)
+  {
+    toSpeak[0] = dataWord[0];
+    strcat(toSpeak, ".wav");
+    system(toSpeak);
+    Sleep(1000);
+    system("/resources/sound/numbers/hundred.wav");
+    Sleep(500);
+    for (int i = 0; i < 10; i++)
+      toSpeak[i] = '\0';
+  }
+
+  // speak if something in ten tho and tho place
+  if (tenThousands && thousands)
+  {
+    toSpeak[0] = dataWord[1];
+    toSpeak[1] = dataWord[2];
+    strcat(toSpeak, ".wav");
+    system(toSpeak);
+    Sleep(1000);
+    for (int i = 0; i < 10; i++)
+      toSpeak[i] = '\0';
+  }
+
+  // speak of ten tho, but no tho place
+  else if (tenThousands)
+  {
+    toSpeak[0] = dataWord[1];
+    toSpeak[1] = dataWord[2];
+    strcat(toSpeak, ".wav");
+    system(toSpeak);
+    Sleep(1000);
+    for (int i = 0; i < 10; i++)
+      toSpeak[i] = '\0';
+  }
+
+  // speak if tho place, but no ten tho
+  else if (thousands)
+  {
+    toSpeak[0] = dataWord[2];
+    strcat(toSpeak, ".wav");
+    system(toSpeak);
+    Sleep(1000);
+    for (int i = 0; i < 10; i++)
+      toSpeak[i] = '\0';
+  }
+
+  // if there is someting in any thousands place, say thousand
+  if (hundredThousands || tenThousands || thousands)
+  {
+    system("/resources/sound/numbers/thousand.wav");
+    Sleep (800);
+  }
+
+  // if there is a hundred val., speak it
+  if (hundreds)
+  {
+    toSpeak[0] = dataWord[3];
+    strcat(toSpeak, ".wav");
+    system(toSpeak);
+    Sleep(1000);
+    system("hundred.wav");
+    Sleep(800);
+    for (int i = 0; i < 10; i++)
+      toSpeak[i] = '\0';
+  }
+
+  // if there are vals. in the tens and ones places, speak them
+  if (smallNums)
+  {
+    // if num is one digit
+    if (smallNums > 9)
+    {
+      toSpeak[0] = dataWord[4];
+      toSpeak[1] = dataWord[5];
+      strcat(toSpeak, ".wav");
+      system(toSpeak);
+      Sleep(1000);
+      for (int i = 0; i < 10; i++)
+        toSpeak[i] = '\0';
+      }
+
+      else // num is 2 dig
+      {
+        strcpy(toSpeak, "/resources/sound/numbers/")
+        toSpeak[25] = dataWord[5];
+        strcat(toSpeak, ".wav");
+        system(toSpeak);
+        Sleep(1000);
+
+        for (int i = 0; i < 10; i++)
+          toSpeak[i] = '\0';
+      }
+  }
+
+  //demo purposes
+  system("/resources/sound/numbers/feet.wav");
+  Sleep(2000);
+  }
+
+  }
+
+}
